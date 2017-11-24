@@ -298,7 +298,7 @@ MVDB = {};
 		}
 		this.entries[_path+key] = newObj;
 		for(var v in this.views){
-			this.views[v]._rebuild();
+			this.views[v]._add({tableKey:this.name,entryKey:_path+key});
 		}
 	};
 	// If the entry doesn't exist NoSuchItem will be thrown.
@@ -311,7 +311,7 @@ MVDB = {};
 		}
 		delete this.entries[_path+key];
 		for(var v in this.views){
-			this.views[v]._rebuild();
+			this.views[v]._remove({tableKey:this.name,entryKey:_path+key});
 		}
 	};
 	// Helper function for get
@@ -391,15 +391,29 @@ MVDB = {};
 	View.prototype.initialize = function(sourceTable,viewName,filterCallback){
 		this.source = sourceTable;
 		this.name = viewName;
+		this.callBackString = filterCallback.toString();
 		this.callBack = filterCallback;
 		this.keys = this.source.selectKeys(this.callBack);
 	};
 	View.prototype.delete = function(){
 		delete this.source.views[this.name];
 	};
-	// Internal function to rebuild the view.
-	View.prototype._rebuild = function(){
-		this.keys = this.source.selectKeys(this.callBack);
+	View.prototype._verifyCallback = function(){
+		if(this.callBack === undefined){
+			eval("this.callBack="+this.callBackString);
+		}
+	};
+	View.prototype._add = function(key){
+		this._verifyCallback();
+		var obj = this.source.get(key.entryKey);
+		if(this.callBack(obj)) this.keys.push(key);
+	};
+	View.prototype._remove = function(key){
+		for(var i in this.keys){
+			var index = -1;
+			if(this.keys[i].entryKey == key.entryKey) index = i;
+			if(index != -1) this.keys = this.keys.splice(index,1); 
+		}
 	};
 	View.prototype.select = function(filterCallback){
 		var output = [];
@@ -429,6 +443,7 @@ MVDB = {};
 		return output;		
 	};
 	View.prototype.makeView = function(viewName,filterCallback){
+		this._verifyCallback();
 		var baseCallback = this.callBack;
 		function newCallback (obj){
 			return baseCallback(obj) && filterCallback(obj);
