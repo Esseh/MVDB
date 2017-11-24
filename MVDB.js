@@ -3,6 +3,7 @@
 * @author Kenneth "Esseh" Willeford
 *
 * BE SURE TO READ THIS DOCUMENTATION
+* Most up to date version here: https://github.com/Esseh/MVDB
 * @help Databases can be made with a lifespan of one of two levels..
 *  1. Temporary Level : (will persist so long as the game remains open)
 *  2. Save File Level : (persists within a save file)
@@ -90,6 +91,9 @@
 *  selectKeys(callback filter(obj))
 *   like select but returns an array of global keys instead.
 *  makeView(string viewName,callback filterCallback(obj))
+*	WARNING-
+*    SAVE FILE DATABASES ONLY: Avoid using closures for the callback and avoid calling functions within the callback. 
+*    Those types of functions are not serializable and will result in those views breaking on file load. Temporary Databases are safe though.
 *   Creates a view with access to view methods.
 *   A view is essentially a stored select statement. When the database changes it is automatically updated.
 *   This means many views can be created to look at specific types of data or data that fulfills certain conditions.
@@ -98,7 +102,6 @@
 *   retrieves a view in a variable giving access to it's methods.
 *   EXCEPTIONS-
 *    NoSuchItem : Thrown if the view doesn't exist.
-*
 * Views have the following public methods...
 *  select(callback filter(obj))
 *   identical to table's but only looking at items in the view.
@@ -107,6 +110,7 @@
 *  getAll()
 *   retrieves every item that the view is looking at.
 *  makeView(string viewName, callback filter(obj))
+*   WARNING: Only create views from views in Temporary Databases. The process to create them utilizes a closure which cannot be recovered on load. 
 *   creates a new view based on a condition AND what the current view is looking at.
 *   Does not throw exceptions, so it can overwrite itself. Be careful of that.
 *
@@ -140,7 +144,7 @@ MVDB = {};
 			};
 			Scene_Map.prototype.start = function(){
 				if($gameSystem._SaveFileMVDB === undefined) $gameSystem._SaveFileMVDB = {};
-				// Cases of loaded data means loss of prototype, so prototype for save DB's must be restored. 
+				/// Cases of loaded data means loss of prototype, so prototype for save DB's must be restored. 
 				if(!loadInitialized){
 					/// Set each database object to DB
 					for(var i in $gameSystem._SaveFileMVDB){
@@ -148,9 +152,27 @@ MVDB = {};
 						/// Set each table object in each database to Table.
 						for(var t in $gameSystem._SaveFileMVDB[i].tables){
 							Object.setPrototypeOf($gameSystem._SaveFileMVDB[i].tables[t],Table.prototype);
+							/// Restore Missing baseTable References In Each Table
+							$gameSystem._SaveFileMVDB[i].tables[t].baseTable = $gameSystem._SaveFileMVDB[i].tables[t];
+							/// Restore Missing ancestor references in each table.
+							var correctAncestors = [];
+							for(var a in $gameSystem._SaveFileMVDB[i].tables[t].ancestors){
+								var ancestorName = $gameSystem._SaveFileMVDB[i].tables[t].ancestors[a].name;
+								correctAncestors.push($gameSystem._SaveFileMVDB[i][ancestorName]);
+							}
+							$gameSystem._SaveFileMVDB[i].tables[t].ancestors = correctAncestors;
+							/// Restore Missing descendant references in each table.
+							var correctDescendants = [];
+							for(var d in $gameSystem._SaveFileMVDB[i].tables[t].descendants){
+								var descendantName = $gameSystem._SaveFileMVDB[i].tables[t].descendants[d].name;
+								correctDescendants.push($gameSystem._SaveFileMVDB[i][descendantName]);
+							}
+							$gameSystem._SaveFileMVDB[i].tables[t].descendants = correctDescendants;
 							/// Set each view object in each table to View
 							for(var v in $gameSystem._SaveFileMVDB[i].tables[t].views){
 								Object.setPrototypeOf($gameSystem._SaveFileMVDB[i].tables[t].views[v],View.prototype);
+								/// Restore Missing Source References Within Views
+								$gameSystem._SaveFileMVDB[i].tables[t].views[w].source = $gameSystem._SaveFileMVDB[i].tables[t];
 							}
 						}
 					}
@@ -258,12 +280,12 @@ MVDB = {};
 		/// Make sure that a basic javascript object is being used for the model.
 		if(model === undefined || model.constructor === Array || typeof(model) !== "object") module.exceptions.InvalidModel();
 		this.views = {};
-		this.baseTable = tablesContainer;
+		this.baseTable = tablesContainer;		/// TODO: FIX MISSING REFERENCE ON LOAD
 		this.name = modelName;	
-		this.entries = {};		
+		this.entries = {};
 		this.model = model;		
-		this.ancestors = [];	
-		this.descendants = [];	
+		this.ancestors = [];					/// TODO: FIX MISSING REFERENCE ON LOAD
+		this.descendants = [];					/// TODO: FIX MISSING REFERENCE ON LOAD
 		// Ensure that ancestors exist.
 		for(var i in ancestors){
 			expectedAncestor = tablesContainer[ancestors[i]];
@@ -389,10 +411,10 @@ MVDB = {};
 		this.initialize.apply(this, arguments);
 	}
 	View.prototype.initialize = function(sourceTable,viewName,filterCallback){
-		this.source = sourceTable;
+		this.source = sourceTable;							/// TODO FIX MISSING REFERENCE ON LOAD
 		this.name = viewName;
 		this.callBackString = filterCallback.toString();
-		this.callBack = filterCallback;
+		this.callBack = filterCallback;						/// Missing reference is fixed through an eval using callBackString on failure.
 		this.keys = this.source.selectKeys(this.callBack);
 	};
 	View.prototype.delete = function(){
